@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brownfield Attendance</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            padding: 20px; 
+            background-color: #f2f2f7; 
+            color: #1c1c1e;
+        }
+        .container { 
+            background: white; 
+            padding: 24px; 
+            border-radius: 20px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); 
+            max-width: 400px; 
+            margin: 0 auto; 
+        }
+        h2 { text-align: center; margin-top: 0; font-weight: 700; }
+        
+        .input-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px; color: #8e8e93; text-transform: uppercase; }
+        select { 
+            width: 100%; 
+            padding: 14px; 
+            border-radius: 12px; 
+            border: 1px solid #d1d1d6; 
+            font-size: 16px; 
+            background-color: #f2f2f7;
+            color: #1c1c1e;
+            appearance: none;
+            margin-bottom: 10px;
+        }
+
+        button { 
+            width: 100%; 
+            padding: 18px; 
+            margin-bottom: 12px; 
+            font-size: 17px; 
+            border: none; 
+            border-radius: 14px; 
+            cursor: pointer; 
+            font-weight: 600; 
+            transition: all 0.2s;
+        }
+        button:disabled {
+            background-color: #d1d1d6 !important;
+            color: #8e8e93 !important;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        button:active { transform: scale(0.98); }
+        .btn-start { background-color: #34c759; color: white; }
+        .btn-stop { background-color: #ff3b30; color: white; display: none; }
+        .btn-send { background-color: #007bff; color: white; display: none; margin-top: 10px; }
+        
+        #status { text-align: center; margin-bottom: 15px; font-size: 14px; font-weight: 500; }
+        
+        #log { 
+            margin-top: 10px; 
+            max-height: 350px; 
+            overflow-y: auto; 
+            border-top: 1px solid #e5e5ea; 
+        }
+        .row { 
+            padding: 12px 5px; 
+            border-bottom: 1px solid #e5e5ea; 
+            display: flex; 
+            align-items: center;
+        }
+        .num-col { color: #007bff; font-weight: bold; width: 35px; }
+        .time-col { color: #8e8e93; font-size: 13px; margin: 0 10px; }
+        .id-col { font-weight: 500; font-family: monospace; flex-grow: 1; text-align: right; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Brownfield Attendance</h2>
+    
+    <div class="input-group">
+        <label>Trainer</label>
+        <select id="trainerSelect">
+            <option value="" disabled selected>-- Choose trainer --</option>
+            <option value="Akshay Bhatkora">Akshay Bhatkora</option>
+            <option value="Hareesh Haridas">Hareesh Haridas</option>
+            <option value="Raju Antony">Raju Antony</option>
+        </select>
+
+        <label>Select Language</label>
+        <select id="languageSelect">
+            <option value="" disabled selected>-- Choose language --</option>
+            <option value="English">English</option>
+            <option value="Hindi">Hindi</option>
+        </select>
+    </div>
+
+    <div id="status">Please select trainer and language to start</div>
+
+    <button id="startBtn" class="btn-start" disabled>▶ Start Scanning</button>
+    <button id="stopBtn" class="btn-stop">⏹ Stop & Review</button>
+    
+    <div id="log"></div>
+    
+    <button id="sendBtn" class="btn-send">✉ Send Report</button>
+</div>
+
+<script>
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxfixVI-zTYEynjpVB2Ti8xl5Fvq17H3t1Feyn3LJ7eeKpfA_xIdipxwL09jPu5MHU/exec'; 
+
+    let currentSession = []; 
+    let ndef;
+
+    const trainerSelect = document.getElementById('trainerSelect');
+    const languageSelect = document.getElementById('languageSelect');
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const logEl = document.getElementById('log');
+
+    // Unlock logic - требует заполнения обоих полей
+    const validateInputs = () => {
+        if (trainerSelect.value !== "" && languageSelect.value !== "") {
+            startBtn.disabled = false;
+            statusEl.innerText = "Ready to scan";
+            statusEl.style.color = "#1c1c1e";
+        }
+    };
+
+    trainerSelect.onchange = validateInputs;
+    languageSelect.onchange = validateInputs;
+
+    window.onbeforeunload = () => (currentSession.length > 0) ? "You have unsent scans!" : null;
+
+    startBtn.onclick = async () => {
+        try {
+            if (!("NDEFReader" in window)) return alert("NFC not supported. Use Chrome on Android.");
+            ndef = new NDEFReader();
+            await ndef.scan();
+            
+            startBtn.style.display = 'none';
+            stopBtn.style.display = 'block';
+            sendBtn.style.display = 'none';
+            trainerSelect.disabled = true;
+            languageSelect.disabled = true;
+            statusEl.innerText = "📡 Scanning... Tap badges";
+            statusEl.style.color = "#34c759";
+
+            ndef.onreading = event => {
+                const id = event.serialNumber;
+                if (currentSession.some(r => r.id === id)) {
+                    if (navigator.vibrate) navigator.vibrate([40, 40, 40]);
+                    return; 
+                }
+                const now = new Date();
+                const rec = { 
+                    date: now.toLocaleDateString('ru-RU'), 
+                    time: now.toLocaleTimeString('ru-RU', {hour: '2-digit', minute:'2-digit'}), 
+                    id: id
+                };
+                currentSession.push(rec);
+                renderRow(rec, currentSession.length);
+                if (navigator.vibrate) navigator.vibrate(50);
+            };
+        } catch (err) { alert("NFC Error: " + err); }
+    };
+
+    stopBtn.onclick = () => {
+        startBtn.style.display = 'block';
+        stopBtn.style.display = 'none';
+        if (currentSession.length > 0) sendBtn.style.display = 'block';
+        trainerSelect.disabled = false;
+        languageSelect.disabled = false;
+        statusEl.innerText = `Paused. Total: ${currentSession.length}`;
+        statusEl.style.color = "#1c1c1e";
+    };
+
+    sendBtn.onclick = () => {
+        sendBtn.innerText = "⏳ Sending...";
+        sendBtn.disabled = true;
+        
+        fetch(SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            body: JSON.stringify({ 
+                trainer: trainerSelect.value, 
+                language: languageSelect.value,
+                scans: currentSession 
+            })
+        }).then(() => {
+            alert("✅ Report sent!");
+            currentSession = [];
+            logEl.innerHTML = "";
+            sendBtn.style.display = 'none';
+            sendBtn.disabled = false;
+            sendBtn.innerText = "✉ Send Report";
+            statusEl.innerText = "Ready to start";
+        });
+    };
+
+    function renderRow(rec, count) {
+        const div = document.createElement('div');
+        div.className = 'row';
+        div.innerHTML = `<span class="num-col">#${count}</span><span class="time-col">${rec.time}</span><span class="id-col">${rec.id}</span>`;
+        logEl.prepend(div);
+    }
+</script>
+</body>
+</html>
